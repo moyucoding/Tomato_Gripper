@@ -12,7 +12,7 @@ def main(interval):
     arm_buf_size = 1024
     arm_pipe_path = '/tmp/ArmControl.pipe'
 
-    arm_handler = ArmHandle.ArmHandler(interval, arm_pipe_path, arm_host, arm_port, arm_buf_size)
+    arm_handler = ArmHandle.ArmHandler(arm_pipe_path,interval, arm_host, arm_port, arm_buf_size)
     thread_arm_handler = Thread(arm_handler.run())
     thread_arm_handler.start()
     '''
@@ -37,4 +37,4 @@ def main(interval):
 
 if __name__ == '__main__':
     plc_interval = 0.02
-    main()
+    main(plc_interval)

@@ -34,6 +34,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-#%%
-print(len('Y.movePos')

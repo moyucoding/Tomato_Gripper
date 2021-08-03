@@ -28,10 +28,14 @@ class ArmHandler:
         #target = 'speed,0,0,0,0,0,0,0'
         #Send string
         self.arm.send(bytes(target, 'utf-8'))
+        print('[Info] Send movePos request to arm.') 
         #Get result
+        time1 = time.time()
         result = self.arm.recv(buf_size)
         while not bool(result.decode('utf-8')):
             result = self.arm.recv(buf_size)
+        time2 = time.time()
+        print('[Info] Moving time:', time2 - time1, '.')
         
 
     def getPos(self):
@@ -58,14 +62,19 @@ class ArmHandler:
             try:
                 #Get request from PLC
                 pipe_raw = os.read(self.pipe, 200)
-                self.request = pipe_raw.decode('utf-8').split(';')[0]
+                self.request = pipe_raw.decode('utf-8').split(';')
                 if self.request[0] == 'movePos':
+                    print('[Info] Get movePos request from PLC.')
                     #Send request to arm
                     target = self.request[1]
                     self.movePos(target)
                     #Send result to PLC
+                    print('[Info] Get movePos result from arm.')
                     ret = 'Y.movePos' + ' '*191
                     os.write(self.pipe, ret.encode('utf-8'))
+                    print('[Info] Send movePos result to PLC')
+                else:
+                    os.write(self.pipe, pipe_raw)
                 '''
                 elif self.request == 'getPos':
                     #Send result to arm
@@ -89,7 +98,8 @@ class ArmHandler:
                 elif self.request[0] == 'y' or self.request[0] == 'n':
                     #Resend to PLC 
                     self.result = 1
-            '''
+                '''
+                
             except:
                 print('[Error] ArmHandler.')
             time.sleep(self.interval/2)    
