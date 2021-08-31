@@ -6,9 +6,11 @@ import ZedHandle
 import darknet
 class YoloDetector:
     def __init__(self):
-        self.path = ''
-        self.cfg = self.path + '/yolo-obj.cfg',
-        self.data = self.path + '/obj.data',
+        path = os.path.abspath(__file__)
+        path = os.path.dirname(path)
+        self.path = path + '/yolo'
+        self.cfg = self.path + '/yolo-obj.cfg'
+        self.data = self.path + '/obj.data'
         self.weight = self.path + '/yolo-obj_1.weights'
         self.batch_size = 1
         self.network, self.class_names, self.class_colors = darknet.load_network(self.cfg, self.data, self.weight, self.batch_size)
@@ -21,7 +23,7 @@ class YoloDetector:
         resized_img = cv2.resize(rgb_img, (dark_w, dark_h), interpolation = cv2.INTER_LINEAR)
         #YOLO detect
         darknet.copy_image_from_bytes(dark_img, resized_img.tobytes())
-        cv2.waitKey()
+        #cv2.waitKey()
         dark_detections = darknet.detect_image(self.network, self.class_names, dark_img, thresh = 0.4)
         darknet.free_image(dark_img)
         #Detection resize
@@ -106,11 +108,11 @@ class VisionHandler:
 
         meanDSR = 0.07076276 * (half_w * half_h) + 186.21035
 
-        line = self.imgR[y - half_h: y + half_h, x - round(1.3 * meanDSR) - half_w: x - round(0.8 * meanDSR) + half_w]
-        kernel_L = self.imgL[y - half_h:y + half_h, x - half_w:x + half_h]
+        line = self.imgR[int(y - half_h): int(y + half_h), int(x - round(1.3 * meanDSR)) - int(half_w): int(x - round(0.8 * meanDSR) + half_w)]
+        kernel_L = self.imgL[int(y - half_h): int(y + half_h), int(x - half_w): int(x + half_h)]
 
         matching = cv2.matchTemplate(line.copy(), kernel_L, cv2.TM_CCOEFF_NORMED)
-        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(matching)
+        _, max_val, _, max_loc = cv2.minMaxLoc(matching)
         top_left = max_loc
         if max_val < 0.25:
             return
@@ -118,12 +120,18 @@ class VisionHandler:
         d = - top_left[0] + round(1.3 * meanDSR)
         fx = self.camera.calibration_parameters.left_cam.fx
         b = self.camera.calibration_parameters.stereo_transform.m[0, 3]
+        #fx = 1048.015625
+        #b = 119.87950134277344
         distance = fx * b / d
 
         self.objPos = (x,y,half_w,half_w,distance)
         pixX = x + w
         pixY = y + h
         pixZ = d
+        #self.camera.calibration_parameters.left_cam.cx = 1115.858642578125
+        #self.camera.calibration_parameters.left_cam.cy = 641.80859375
+        #self.camera.calibration_parameters.left_cam.fx = 1048.015625
+        #self.camera.calibration_parameters.left_cam.fy = 1048.015625
 
         camX = (pixX - self.camera.calibration_parameters.left_cam.cx) * pixZ / self.camera.calibration_parameters.left_cam.fx
         camY = (pixY - self.camera.calibration_parameters.left_cam.cy) * pixY / self.camera.calibration_parameters.left_cam.fy

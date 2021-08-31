@@ -1,0 +1,6 @@
+classes = 1
+train = ./scripts/2007_train.txt
+valid = ./scripts/2007_test.txt
+#valid = ./scripts/2007_val.txt
+names = Tom/yolo/obj.names
+backup = backup/
