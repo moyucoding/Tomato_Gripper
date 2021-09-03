@@ -28,6 +28,7 @@ detector.detect(img)
 # %%
 import cv2
 import os
+import time
 from VisionHandle import VisionHandler
 vision = VisionHandler(1, '123')
 path = os.path.abspath(__file__)
@@ -38,7 +39,24 @@ imgR_path = path + '/pics/good_data/01/right.png'
 vision.imgR = cv2.imread(imgR_path)
 vision.camera.open()
 vision.camera.close()
-
+time0 = time.time()
 vision.detectObject()
+time1 = time.time()
+print('detect time:',time1 - time0)
 vision.getPos()
+time2 = time.time()
+print('getpos time:', time2 - time0)
 print(vision.objPos)
+#%%
+import time
+pipe_path = '/tmp/Vision.pipe'
+try:
+    os.mkfifo(pipe_path)
+except OSError:
+    print('[Info] VisionHandler: Pipe: ',pipe_path,' exists.')
+pipe = os.open(pipe_path, os.O_CREAT | os.O_RDWR | os.O_NONBLOCK)
+request = 'DetectObject;'
+request += ' '*(200 - len(request))
+os.write(pipe, request.encode('utf-8'))
+
+# %%

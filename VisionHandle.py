@@ -4,6 +4,8 @@ import os
 import time
 import ZedHandle
 import darknet
+
+import logging
 class YoloDetector:
     def __init__(self):
         path = os.path.abspath(__file__)
@@ -48,6 +50,9 @@ class YoloDetector:
             detections.append((w*h, label, conf, (x,y,w,h,0)))
         #Sort detections
         detections.sort(key = lambda t:t[0], reverse=True)
+        if not detections:
+            return [0,0,0,(0,0,0,0,0)]
+
         return detections[0]
 
 class VisionHandler:
@@ -64,7 +69,13 @@ class VisionHandler:
         #objPix: x,y,w,h,d
         self.objPix = (0,0,0,0,0)
         self.objPos = (0,0,0,0,0,0)
+
+        self.state = 0
         
+        self.logfile = 'log.log'
+        
+        logging.basicConfig(level = logging.INFO, filename=self.logfile,filemode='a', format = '%(asctime)s - %(message)s')
+        self.logger = logging.getLogger('vision')
         try:
             os.mkfifo(self.pipe_path)
         except OSError:
@@ -83,7 +94,9 @@ class VisionHandler:
     def detectObject(self):
         #Target detection
         #Set objPix
-        _, self.objLabel, self.objConf, self.objPix = self.detetor.detect(self.imgL)
+        self.state, self.objLabel, self.objConf, self.objPix = self.detetor.detect(self.imgL)
+        if self.state:
+            self.state = 1
         pass
 
     def filter(self, img):
@@ -91,6 +104,9 @@ class VisionHandler:
         return cv2.filter2D(img, -1, kernel=kernel)
 
     def getPos(self):
+        if not self.state:
+            self.objPos = (0,0,0,0,0,0)
+            return
         #Load objPix
         #filtered_imgL = self.filter(self.imgL)
         #filtered_imgR = self.filter(self.imgR)
@@ -110,11 +126,14 @@ class VisionHandler:
 
         line = self.imgR[int(y - half_h): int(y + half_h), int(x - round(1.3 * meanDSR)) - int(half_w): int(x - round(0.8 * meanDSR) + half_w)]
         kernel_L = self.imgL[int(y - half_h): int(y + half_h), int(x - half_w): int(x + half_h)]
-
-        matching = cv2.matchTemplate(line.copy(), kernel_L, cv2.TM_CCOEFF_NORMED)
-        _, max_val, _, max_loc = cv2.minMaxLoc(matching)
-        top_left = max_loc
+        try:
+            matching = cv2.matchTemplate(line.copy(), kernel_L, cv2.TM_CCOEFF_NORMED)
+            _, max_val, _, max_loc = cv2.minMaxLoc(matching)
+            top_left = max_loc
+        except:
+            max_val = 0
         if max_val < 0.25:
+            self.objPos = (0,0,0,0,0,0)
             return
         
         d = - top_left[0] + round(1.3 * meanDSR)
@@ -144,19 +163,45 @@ class VisionHandler:
         self.objPos = (camX, camY, camZ, camRx, camRy, camRz)
 
     def run(self):
-        while True:
-            #Get request from PLC
-            pipe_raw = os.read(self.pipe, 200)
-            #pipe_raw = 'DetectObject;'
-            self.request = pipe_raw.decode('utf-8').split(';')[0] 
-            if self.request == 'DetectObject':
-                #Take photo
-                self.takePhoto()
-                #Detect object
-                self.detectObject()
-                #Get position
-                self.getPos()
-                #Send result to PLC
-                os.write(self.pipe, 'Y.DetectObject'.encode('utf-8'))
+        try:
+            while True:
+                #Get request from PLC
+                pipe_raw = os.read(self.pipe, 200)
+                #pipe_raw = 'DetectObject;'
+                self.request = pipe_raw.decode('utf-8').split(';')[0] 
+                if self.request == 'DetectObject':
+                    #Take photo
+                    time0 = time.time()
+                    self.takePhoto()
+                    time1 = time.time()
+                    print('Shoot:', time1-time0)
+                    self.logger.error('Shoot:' + str(time1-time0))
+                    #Detect object
+                    self.detectObject()
+                    time2 = time.time()
+                    print('Detect:', time2-time1)
+                    self.logger.error('Detect:' + str(time2-time1))
+                    #Get position
+                    self.getPos()
+                    time3 = time.time()
+                    print('Match:',time3 - time2)
+                    self.logger.error('Match:' + str(time3 - time2))
+                    #Send result to PLC
+                    ret = [str(round(i,2)) for i in self.objPos]
+                    ret = ','.join(ret)
+                    if (not self.state) or (ret == '0,0,0,0,0,0'):
+                        ret = 'N.DetectObject;' + ret + ';'
+                    else:
+                        ret = 'Y.DetectObject;' + ret + ';'
+                    print(ret)
+                    ret += ' '*(200 - len(ret))
+                    os.write(self.pipe, ret.encode('utf-8'))
+                elif self.request == 'Y' or self.request == 'N':
+                    os.write(self.pipe, pipe_raw)
 
-            time.sleep(self.interval)
+
+                time.sleep(self.interval)
+
+        except KeyboardInterrupt:
+                    self.camera.close()
+                    self.camera.open()
