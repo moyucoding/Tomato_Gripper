@@ -157,14 +157,16 @@ class VisionHandler:
         camZ = pixZ
 
         camRx = 0
-        camRy = 0
+        camRy = 1.57
         camRz = 0
         
         self.objPos = (camX, camY, camZ, camRx, camRy, camRz)
 
     def run(self):
-        try:
-            while True:
+        op_count = 0
+        resend_count = 0
+        while True:
+            try:
                 #Get request from PLC
                 pipe_raw = os.read(self.pipe, 200)
                 #pipe_raw = 'DetectObject;'
@@ -174,34 +176,54 @@ class VisionHandler:
                     time0 = time.time()
                     self.takePhoto()
                     time1 = time.time()
-                    print('Shoot:', time1-time0)
+                    #print('Shoot:', time1-time0)
                     self.logger.error('Shoot:' + str(time1-time0))
                     #Detect object
                     self.detectObject()
                     time2 = time.time()
-                    print('Detect:', time2-time1)
+                    #print('Detect:', time2-time1)
                     self.logger.error('Detect:' + str(time2-time1))
                     #Get position
                     self.getPos()
                     time3 = time.time()
-                    print('Match:',time3 - time2)
+                    #print('Match:',time3 - time2)
                     self.logger.error('Match:' + str(time3 - time2))
                     #Send result to PLC
+                    ret = []
+                    #POS: mm -> m
+                    for i in range(3):
+                        tmp = str(round(self.objPos[i]/1000,4))
+                        ret.append(tmp)
+                    #ORI: rad
+                    for i in range(3,6):
+                        tmp = str(round(self.objPos[i],2))
+                        ret.append(tmp)
                     ret = [str(round(i,2)) for i in self.objPos]
                     ret = ','.join(ret)
                     if (not self.state) or (ret == '0,0,0,0,0,0'):
                         ret = 'N.DetectObject;' + ret + ';'
                     else:
                         ret = 'Y.DetectObject;' + ret + ';'
-                    print(ret)
                     ret += ' '*(200 - len(ret))
                     os.write(self.pipe, ret.encode('utf-8'))
-                elif self.request == 'Y' or self.request == 'N':
+                    op_count += 1
+                    resend_count = 0
+                    self.logger.error('COUNT:' + str(op_count))
+                    self.logger.error(ret)
+                    print('Op:' + str(op_count))
+                    #print(ret)
+                elif self.request[0] == 'Y' or self.request[0] == 'N':
                     os.write(self.pipe, pipe_raw)
-
+                    resend_count += 1
+                    self.logger.error('RESEND:' + str(resend_count))
+                    self.logger.error(self.request)
+                    time.sleep(self.interval/2)
 
                 time.sleep(self.interval)
-
-        except KeyboardInterrupt:
-                    self.camera.close()
-                    self.camera.open()
+            except KeyboardInterrupt:
+                break
+            except:
+                self.camera.close()
+                print('Error. restarting')
+                self.logger.error('RESTART')
+        

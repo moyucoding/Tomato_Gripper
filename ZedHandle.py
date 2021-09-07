@@ -27,7 +27,7 @@ class ZedHandler:
                 count += 1
                 time.sleep(1)
             self.calibration_parameters = self.camera.get_camera_information().calibration_parameters
-        print("Camera Opened.")
+        #print("Camera Opened.")
         pass
 
     def shoot(self):

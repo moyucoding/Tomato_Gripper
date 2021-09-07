@@ -60,3 +60,5 @@ request += ' '*(200 - len(request))
 os.write(pipe, request.encode('utf-8'))
 
 # %%
+print(bin(44))
+# %%
