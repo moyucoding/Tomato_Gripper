@@ -105,27 +105,26 @@ class VisionHandler:
 
     def getPos(self):
         if not self.state:
-            self.objPos = (0,0,0,0,0,0)
+            self.objPos = (0.5,0,0,0,1.57,0)
             return
         #Load objPix
         #filtered_imgL = self.filter(self.imgL)
         #filtered_imgR = self.filter(self.imgR)
-        #Template matching
         x,y,w,h,_ = self.objPix
 
         cam_delta = self.camera.calibration_parameters.right_cam.cx - self.camera.calibration_parameters.left_cam.cx
         
         d = 0
         self.objPix = (x,y,w,h,d)
-        #Matrix operations
+
+        #Matching between L/R pics
         half_w = w//2
         half_h = h//2
-        value = -1
-
         meanDSR = 0.07076276 * (half_w * half_h) + 186.21035
 
         line = self.imgR[int(y - half_h): int(y + half_h), int(x - round(1.3 * meanDSR)) - int(half_w): int(x - round(0.8 * meanDSR) + half_w)]
         kernel_L = self.imgL[int(y - half_h): int(y + half_h), int(x - half_w): int(x + half_h)]
+        cv2.imwrite('kl.jpg',kernel_L)
         try:
             matching = cv2.matchTemplate(line.copy(), kernel_L, cv2.TM_CCOEFF_NORMED)
             _, max_val, _, max_loc = cv2.minMaxLoc(matching)
@@ -133,34 +132,45 @@ class VisionHandler:
         except:
             max_val = 0
         if max_val < 0.25:
-            self.objPos = (0,0,0,0,0,0)
+            self.objPos = (0.5,0,0,0,1.57,0)
             return
         
+        # Get distance
         d = - top_left[0] + round(1.3 * meanDSR)
         fx = self.camera.calibration_parameters.left_cam.fx
         b = self.camera.calibration_parameters.stereo_transform.m[0, 3]
+
         #fx = 1048.015625
         #b = 119.87950134277344
         distance = fx * b / d
-
+        
+        #newR = cv2.rectangle(self.imgR.copy(),(int(x-d-half_w//2), int(y-half_h//2)), (int(x-d+half_w//2),int(y+half_h//2)), (0,0,0), 2)
+        #cv2.rectangle(self.imgR.copy(),(0,0), (100,100), (0,0,0), -1)
+        #cv2.imwrite('r.jpg',newR)
+        newL = cv2.rectangle(self.imgL.copy(), (int(x-half_w), int(y-half_h)), (int(x+half_w), int(y+half_h)), (218,165,0), 1)
+        newR = cv2.rectangle(self.imgR.copy(),(int(x-d-half_w), int(y-half_h)), (int(x-d+half_w),int(y+half_h)), (218,165,0), 1)
+        newRet = np.concatenate((newL,newR), axis=1)
+        cv2.imwrite('match.jpg', newRet)
         self.objPos = (x,y,half_w,half_w,distance)
-        pixX = x + w
-        pixY = y + h
-        pixZ = d
+        pixX = x
+        pixY = y
+
         #self.camera.calibration_parameters.left_cam.cx = 1115.858642578125
         #self.camera.calibration_parameters.left_cam.cy = 641.80859375
         #self.camera.calibration_parameters.left_cam.fx = 1048.015625
         #self.camera.calibration_parameters.left_cam.fy = 1048.015625
 
-        camX = (pixX - self.camera.calibration_parameters.left_cam.cx) * pixZ / self.camera.calibration_parameters.left_cam.fx
-        camY = (pixY - self.camera.calibration_parameters.left_cam.cy) * pixY / self.camera.calibration_parameters.left_cam.fy
-        camZ = pixZ
+        camX = (pixX - self.camera.calibration_parameters.left_cam.cx) * distance / self.camera.calibration_parameters.left_cam.fx / 1000
+        camY = (pixY - self.camera.calibration_parameters.left_cam.cy) * distance / self.camera.calibration_parameters.left_cam.fy / 1000
+        camZ = distance / 1000
 
-        camRx = 0
-        camRy = 1.57
+        camRx = 1.57
+        camRy = 0
         camRz = 0
-        
-        self.objPos = (camX, camY, camZ, camRx, camRy, camRz)
+
+
+        self.objPos = (0.2+camZ,0-camX,0.4-camY, camRz, camRx, camRy)
+        print('POS:',0.2+camZ,0-camX,0.4-camY)
 
     def run(self):
         op_count = 0
@@ -182,6 +192,11 @@ class VisionHandler:
                     self.detectObject()
                     time2 = time.time()
                     #print('Detect:', time2-time1)
+                    ret = ''
+                    for p in self.objPix:
+                        ret += str(p)
+                        ret += ','
+                    self.logger.error(ret)
                     self.logger.error('Detect:' + str(time2-time1))
                     #Get position
                     self.getPos()
@@ -190,17 +205,17 @@ class VisionHandler:
                     self.logger.error('Match:' + str(time3 - time2))
                     #Send result to PLC
                     ret = []
-                    #POS: mm -> m
+                    #POS: m
                     for i in range(3):
-                        tmp = str(round(self.objPos[i]/1000,4))
+                        tmp = str(round(self.objPos[i],4))
                         ret.append(tmp)
                     #ORI: rad
                     for i in range(3,6):
                         tmp = str(round(self.objPos[i],2))
                         ret.append(tmp)
-                    ret = [str(round(i,2)) for i in self.objPos]
+                    #ret = [str(round(i,2)) for i in self.objPos]
                     ret = ','.join(ret)
-                    if (not self.state) or (ret == '0,0,0,0,0,0'):
+                    if (not self.state) or (ret == '0.5,0,0,0,1.57,0'):
                         ret = 'N.DetectObject;' + ret + ';'
                     else:
                         ret = 'Y.DetectObject;' + ret + ';'
@@ -222,8 +237,10 @@ class VisionHandler:
                 time.sleep(self.interval)
             except KeyboardInterrupt:
                 break
+            
             except:
                 self.camera.close()
                 print('Error. restarting')
                 self.logger.error('RESTART')
+            
         
