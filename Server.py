@@ -10,9 +10,8 @@ def main(interval):
     arm_host = '192.168.127.20'
     arm_port = 5062
     arm_buf_size = 1024
-    arm_pipe_path = '/tmp/ArmControl.pipe'
 
- #   arm_handler = ArmHandle.ArmHandler(arm_pipe_path,interval, arm_host, arm_port, arm_buf_size)
+ #   arm_handler = ArmHandle.ArmHandler(interval, arm_host, arm_port, arm_buf_size)
  #   thread_arm_handler = Thread(arm_handler.run())
  #   thread_arm_handler.start()
     '''
@@ -30,7 +29,7 @@ def main(interval):
     #Initialize VisionHandler
     vision_pipe_path = '/tmp/Vision.pipe'
 
-    vision_handler = VisionHandle.VisionHandler(interval, vision_pipe_path)
+    vision_handler = VisionHandle.VisionHandler(interval)
     thread_vision_handler = Thread(vision_handler.run())
     thread_vision_handler.start()
     

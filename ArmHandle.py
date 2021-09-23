@@ -3,9 +3,8 @@ import socket
 import time
 
 class ArmHandler:
-    def __init__(self, pipe_path, interval, host, port, buf_size) -> None:
+    def __init__(self, nterval, host, port, buf_size) -> None:
         self.interval = interval
-        self.pipe_path = pipe_path
         self.host = host
         self.port = port
         self.arm = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -16,10 +15,13 @@ class ArmHandler:
         self.result = ''
 
         try:
-            os.mkfifo(self.pipe_path)
-        except OSError:
-            print('[Info] ArmHandler: Pipe: ',self.pipe_path,' exists.')
-        self.pipe = os.open(self.pipe_path, os.O_CREAT | os.O_RDWR)
+            os.mkfifo('/tmp/ArmControl1.pipe')
+        except:
+            pass
+        try:
+            os.mkfifo('/tmp/ArmControl2.pipe')
+        except:
+            pass
         
     
     def movePos(self, target):
@@ -66,10 +68,12 @@ class ArmHandler:
         pass
 
     def run(self):
+        fd1 = os.open('/tmp/ArmControl1.pipe', os.O_CREAT | os.O_RDONLY)
+        fd2 = os.open('/tmp/ArmControl2.pipe', os.O_SYNC | os.O_CREAT | os.O_WRONLY)
         while True:
             try:
                 #Get request from PLC
-                pipe_raw = os.read(self.pipe, 200)
+                pipe_raw = os.read(fd1, 200)
                 self.request = pipe_raw.decode('utf-8').split(';')
                 if self.request[0] == 'movePos':
                     print('[Info] Get movePos request from PLC.')
@@ -79,7 +83,7 @@ class ArmHandler:
                     #Send result to PLC
                     print('[Info] Get movePos result from arm.')
                     ret = 'Y;movePos;' + ' '*190
-                    os.write(self.pipe, ret.encode('utf-8'))
+                    os.write(self.fd2, ret.encode('utf-8'))
                     print('[Info] Send movePos result to PLC')
 
                 elif self.request[0] == 'getPos':
@@ -89,7 +93,7 @@ class ArmHandler:
                     #Send result to PLC
                     print('[Info] Get getPos result from arm.')
                     self.result = 'Y;getPos;' + pos + ';' +' '*(190 - len(pos))
-                    os.write(self.pipe, self.result.encode('utf-8'))
+                    os.write(self.fd2, self.result.encode('utf-8'))
                     print('[Info] Send getPos result to PLC')
 
                 elif self.request[0] == 'holdGripper':
@@ -98,7 +102,7 @@ class ArmHandler:
                     self.holdGripper()
                     #Send result to PLC
                     ret = 'Y;holdGripper;' + ' '*186
-                    os.write(self.pipe, ret.encode('utf-8'))
+                    os.write(self.fd2, ret.encode('utf-8'))
                     print('[Info] Send holdGripper result to PLC')
 
                 elif self.request[0] == 'releaseGripper':
@@ -107,11 +111,8 @@ class ArmHandler:
                     self.releaseGripper()
                     #Send result to PLC
                     ret = 'Y;releaseGripper;' + ' '*183
-                    os.write(self.pipe, ret.encode('utf-8'))
+                    os.write(self.fd2, ret.encode('utf-8'))
                     print('[Info] Send releaseGripper result to PLC')
-
-                else:
-                    os.write(self.pipe, pipe_raw)
                 
             except:
                 print('[Error] ArmHandler.')

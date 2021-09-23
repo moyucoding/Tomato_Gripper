@@ -60,5 +60,44 @@ request += ' '*(200 - len(request))
 os.write(pipe, request.encode('utf-8'))
 
 # %%
-print(bin(44))
+import numpy as np
+camX = 15
+camY = 0
+camZ = 0
+camPos = np.array([camX,camY,camZ,1])
+camPos.reshape((1,4))
+print(camPos)
+'''
+r1 = np.array([ [ 0, 0, 1,  0],
+                [-1, 0, 0,  0],
+                [ 0,-1, 0, 10],
+                [ 0, 0, 0,  1]])
+'''
+r1 = np.array([ [ 1, 0, 0,  0],
+                [ 0, 1, 0,-10],
+                [ 0, 0, 1,  0],
+                [ 0, 0, 0,  1]])
+print(r1.dot(camPos))
+
+#Rotation 2: TCP to Base
+tcp = (0,0,0,0,1.57,0)
+x ,y ,z ,rx ,ry ,rz = tcp
+r2 = np.zeros((4,4))
+cosx = np.cos(rx)
+sinx = np.sin(rx)
+cosy = np.cos(ry)
+siny = np.sin(ry)
+cosz = np.cos(rz)
+sinz = np.sin(rz)
+
+r2 = np.array( [[cosy*cosz, sinx*siny*cosz - cosx*sinz, cosx*siny*cosz + sinx*sinz, x],
+                [cosy*sinz, sinx*siny*sinz + cosx*cosz, cosx*siny*sinz - sinx*cosz, y],
+                [    -siny,                  sinx*cosy,                  cosx*cosy, z],
+                [        0,                          0,                          0, 1]])
+print(r2)
+basePos = r2.dot(r1.dot(camPos)) 
+print(basePos)
+for i in range(len(basePos)):
+    basePos[i] = round(basePos[i],4)
+print(basePos)
 # %%

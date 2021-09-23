@@ -23,7 +23,7 @@ class YoloDetector:
         dark_img = darknet.make_image(dark_w, dark_h, 3)
         rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         resized_img = cv2.resize(rgb_img, (dark_w, dark_h), interpolation = cv2.INTER_LINEAR)
-        #YOLO detect
+        #YOLO detect tcp = (0.5,0,0.5,0,1.57,0)
         darknet.copy_image_from_bytes(dark_img, resized_img.tobytes())
         #cv2.waitKey()
         dark_detections = darknet.detect_image(self.network, self.class_names, dark_img, thresh = 0.4)
@@ -56,11 +56,12 @@ class YoloDetector:
         return detections[0]
 
 class VisionHandler:
-    def __init__(self, interval, vision_pipe_path) -> None:
+    def __init__(self, interval) -> None:
         self.interval = interval
-        self.pipe_path = vision_pipe_path
+        
         self.camera = ZedHandle.ZedHandler()
-        self.detetor = YoloDetector()
+        self.detetor = YoloDetector() 
+        self.tcp = (0,0,0,0,0,0)
 
         self.imgL = ''
         self.imgR = ''
@@ -69,47 +70,54 @@ class VisionHandler:
         #objPix: x,y,w,h,d
         self.objPix = (0,0,0,0,0)
         self.objPos = (0,0,0,0,0,0)
-
-        self.state = 0
         
         self.logfile = 'log.log'
         
         logging.basicConfig(level = logging.INFO, filename=self.logfile,filemode='a', format = '%(asctime)s - %(message)s')
         self.logger = logging.getLogger('vision')
         try:
-            os.mkfifo(self.pipe_path)
-        except OSError:
-            print('[Info] VisionHandler: Pipe: ',self.pipe_path,' exists.')
-        self.pipe = os.open(self.pipe_path, os.O_CREAT | os.O_RDWR)
+            os.mkfifo('/tmp/Vision1.pipe')
+        except:
+            pass
+        try:
+            os.mkfifo('/tmp/Vision2.pipe')
+        except:
+            pass
         pass
 
     def takePhoto(self):
+        time0 = time.time()
         #Take photo using API
         self.camera.shoot()
         #Set photo
         self.imgL = self.camera.imgL
         self.imgR = self.camera.imgR
+
+        time1 = time.time()
+        #print('Shoot:', time1-time0)
+        self.logger.error('Shoot:' + str(time1-time0))
         pass
 
     def detectObject(self):
+        time0 = time.time()
         #Target detection
         #Set objPix
-        self.state, self.objLabel, self.objConf, self.objPix = self.detetor.detect(self.imgL)
-        if self.state:
-            self.state = 1
-        pass
-
-    def filter(self, img):
-        kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], np.float32)
-        return cv2.filter2D(img, -1, kernel=kernel)
-
-    def getPos(self):
-        if not self.state:
-            self.objPos = (0.5,0,0,0,1.57,0)
-            return
+        state, self.objLabel, self.objConf, self.objPix = self.detetor.detect(self.imgL)
+        time1 = time.time()
+        if state:
+            ret = ''
+            for p in self.objPix:
+                ret += str(p)
+                ret += ','
+            self.logger.error(ret)
+        else:
+            self.logger.error('Detect Nothing.')
+        self.logger.error('Detect:' + str(time1-time0))
+        return bool(state) 
+    
+    def matchObject(self):
+        time0 = time.time()
         #Load objPix
-        #filtered_imgL = self.filter(self.imgL)
-        #filtered_imgR = self.filter(self.imgR)
         x,y,w,h,_ = self.objPix
 
         cam_delta = self.camera.calibration_parameters.right_cam.cx - self.camera.calibration_parameters.left_cam.cx
@@ -132,115 +140,123 @@ class VisionHandler:
         except:
             max_val = 0
         if max_val < 0.25:
-            self.objPos = (0.5,0,0,0,1.57,0)
-            return
+            self.objPos = (0,0,0,0,0,0)
+            time1 = time.time()
+            self.logger.error('Match:' + str(time1 - time0))
+            return False
         
         # Get distance
         d = - top_left[0] + round(1.3 * meanDSR)
         fx = self.camera.calibration_parameters.left_cam.fx
         b = self.camera.calibration_parameters.stereo_transform.m[0, 3]
 
-        #fx = 1048.015625
-        #b = 119.87950134277344
         distance = fx * b / d
-        
-        #newR = cv2.rectangle(self.imgR.copy(),(int(x-d-half_w//2), int(y-half_h//2)), (int(x-d+half_w//2),int(y+half_h//2)), (0,0,0), 2)
-        #cv2.rectangle(self.imgR.copy(),(0,0), (100,100), (0,0,0), -1)
-        #cv2.imwrite('r.jpg',newR)
-        newL = cv2.rectangle(self.imgL.copy(), (int(x-half_w), int(y-half_h)), (int(x+half_w), int(y+half_h)), (218,165,0), 1)
-        newR = cv2.rectangle(self.imgR.copy(),(int(x-d-half_w), int(y-half_h)), (int(x-d+half_w),int(y+half_h)), (218,165,0), 1)
-        newRet = np.concatenate((newL,newR), axis=1)
-        cv2.imwrite('match.jpg', newRet)
+              
         self.objPos = (x,y,half_w,half_w,distance)
         pixX = x
         pixY = y
 
-        #self.camera.calibration_parameters.left_cam.cx = 1115.858642578125
-        #self.camera.calibration_parameters.left_cam.cy = 641.80859375
-        #self.camera.calibration_parameters.left_cam.fx = 1048.015625
-        #self.camera.calibration_parameters.left_cam.fy = 1048.015625
-
         camX = (pixX - self.camera.calibration_parameters.left_cam.cx) * distance / self.camera.calibration_parameters.left_cam.fx / 1000
         camY = (pixY - self.camera.calibration_parameters.left_cam.cy) * distance / self.camera.calibration_parameters.left_cam.fy / 1000
         camZ = distance / 1000
+        self.objPos = (camX,  camY, camZ , 0, 0, 0)
+        time1 = time.time()
+        self.logger.error('Match:' + str(time1 - time0))
+        return True
 
+    def eyeToHand(self):
+        camX, camY, camZ, _, _ ,_ =self.objPos
         camRx = 1.57
         camRy = 0
         camRz = 0
-
-
         self.objPos = (0.2+camZ,0-camX,0.4-camY, camRz, camRx, camRy)
-        print('POS:',0.2+camZ,0-camX,0.4-camY)
+        pass
+
+    def eyeOnHand(self):
+        #Get TCP
+        #Rotation 1: Eye to TCP
+        camX, camY, camZ, _, _, _ = self.objPos
+        camPos = np.array([camX,camY,camZ,1])
+        r1 = np.array([ [ 0,-1, 0, 0],
+                        [ 0, 0,-1,10],
+                        [ 1, 0, 0, 0],
+                        [ 0, 0, 0, 1]])
+        #Rotation 2: TCP to Base
+        tcp = (0,0,0,0,0,0)
+        x ,y ,z ,rx ,ry ,rz = tcp
+        r2 = np.zeros((4,4))
+        cosx = np.cos(rx)
+        sinx = np.sin(rx)
+        cosy = np.cos(ry)
+        siny = np.sin(ry)
+        cosz = np.cos(rz)
+        sinz = np.sin(rz)
+
+        r2 = np.array( [[cosy*cosz, sinx*siny*cosz - cosx*sinz, cosx*siny*cosz + sinx*sinz, x],
+                        [cosy*sinz, sinx*siny*sinz + cosx*cosz, cosx*siny*sinz - sinx*cosz, y],
+                        [    -siny,                  sinx*cosy,                  cosx*cosy, z],
+                        [        0,                          0,                          0, 1]])
+        
+        basePos = camPos.dot(r1).dot(r2) 
+        print(basePos)
+        self.objPos = (basePos[0], basePos[1], basePos[2], 0,0,0)
+        pass
+
+    def getPos(self):
+        
+        if self.matchObject():
+            #Eye to hand
+            #self.eyeToHand()
+            #Eye on hand
+            self.eyeOnHand()
+            return True
+        return False
+
+    def sendResult(self):
+        pass
 
     def run(self):
         op_count = 0
-        resend_count = 0
+        fd1 = os.open('/tmp/Vision1.pipe', os.O_CREAT | os.O_RDONLY)
+        fd2 = os.open('/tmp/Vision2.pipe', os.O_SYNC | os.O_CREAT | os.O_WRONLY)
         while True:
             try:
                 #Get request from PLC
-                pipe_raw = os.read(self.pipe, 200)
+                pipe_raw = os.read(fd1, 200)
                 #pipe_raw = 'DetectObject;'
                 self.request = pipe_raw.decode('utf-8').split(';')[0] 
                 if self.request == 'DetectObject':
                     #Take photo
-                    time0 = time.time()
                     self.takePhoto()
-                    time1 = time.time()
-                    #print('Shoot:', time1-time0)
-                    self.logger.error('Shoot:' + str(time1-time0))
                     #Detect object
-                    self.detectObject()
-                    time2 = time.time()
-                    #print('Detect:', time2-time1)
-                    ret = ''
-                    for p in self.objPix:
-                        ret += str(p)
-                        ret += ','
-                    self.logger.error(ret)
-                    self.logger.error('Detect:' + str(time2-time1))
-                    #Get position
-                    self.getPos()
-                    time3 = time.time()
-                    #print('Match:',time3 - time2)
-                    self.logger.error('Match:' + str(time3 - time2))
-                    #Send result to PLC
-                    ret = []
-                    #POS: m
-                    for i in range(3):
-                        tmp = str(round(self.objPos[i],4))
-                        ret.append(tmp)
-                    #ORI: rad
-                    for i in range(3,6):
-                        tmp = str(round(self.objPos[i],2))
-                        ret.append(tmp)
-                    #ret = [str(round(i,2)) for i in self.objPos]
-                    ret = ','.join(ret)
-                    if (not self.state) or (ret == '0.5,0,0,0,1.57,0'):
-                        ret = 'N.DetectObject;' + ret + ';'
+                    if self.detectObject():
+                        #Get position
+                        if self.getPos():
+                            #Send valid result to PLC
+                            ret = []
+                            #POS: m
+                            for i in range(3):
+                                tmp = str(round(self.objPos[i],4))
+                                ret.append(tmp)
+                            #ORI: rad
+                            for i in range(3,6):
+                                tmp = str(round(self.objPos[i],2))
+                                ret.append(tmp)
+                            ret = ','.join(ret)
+                            ret = 'Y.DetectObject;' + ret + ';'
+                        else:
+                            ret = 'N.DetectObject;' + '0,0,0,0,0,0' + ';'
                     else:
-                        ret = 'Y.DetectObject;' + ret + ';'
+                        ret = 'N.DetectObject;' + '0,0,0,0,0,0' + ';'
+
                     ret += ' '*(200 - len(ret))
-                    os.write(self.pipe, ret.encode('utf-8'))
+                    os.write(fd2, ret.encode('utf-8'))
                     op_count += 1
-                    resend_count = 0
                     self.logger.error('COUNT:' + str(op_count))
                     self.logger.error(ret)
                     print('Op:' + str(op_count))
-                    #print(ret)
-                elif self.request[0] == 'Y' or self.request[0] == 'N':
-                    os.write(self.pipe, pipe_raw)
-                    resend_count += 1
-                    self.logger.error('RESEND:' + str(resend_count))
-                    self.logger.error(self.request)
-                    time.sleep(self.interval/2)
 
                 time.sleep(self.interval)
             except KeyboardInterrupt:
                 break
-            
-            except:
-                self.camera.close()
-                print('Error. restarting')
-                self.logger.error('RESTART')
-            
         
